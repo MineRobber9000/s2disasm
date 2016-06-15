@@ -62,6 +62,7 @@ next_tilt =		$36 ; angle on ground in front of sprite
 tilt =			$37 ; angle on ground
 stick_to_convex =	$38 ; 0 for normal, 1 to make Sonic stick to convex surfaces like the rotating discs in Sonic 1 and 3 (unused in Sonic 2 but fully functional)
 spindash_flag =		$39 ; 0 for normal, 1 for charging a spindash or forced rolling
+pinball_mode =		spindash_flag
 spindash_counter =	$3A ; and $3B
 restart_countdown =	spindash_counter; and 1+spindash_counter
 jumping =		$3C
@@ -229,6 +230,20 @@ bumper_x            = 2
 bumper_y            = 4
 next_bumper         = 6
 prev_bumper_x       = bumper_x-next_bumper
+
+; ---------------------------------------------------------------------------
+; status_secondary bitfield variables
+;
+; status_secondary variable bit numbers
+status_sec_hasShield:		EQU	0
+status_sec_isInvincible:	EQU	1
+status_sec_hasSpeedShoes:	EQU	2
+status_sec_isSliding:		EQU	7
+; status_secondary variable masks (1 << x == pow(2, x))
+status_sec_hasShield_mask:	EQU	1<<status_sec_hasShield		; $01
+status_sec_isInvincible_mask:	EQU	1<<status_sec_isInvincible	; $02
+status_sec_hasSpeedShoes_mask:	EQU	1<<status_sec_hasSpeedShoes	; $04
+status_sec_isSliding_mask:	EQU	1<<status_sec_isSliding		; $80
 
 ; ---------------------------------------------------------------------------
 ; Constants that can be used instead of hard-coded IDs for various things.
@@ -1045,8 +1060,9 @@ Tails_InvincibilityStars:
 				ds.b	object_size
 				ds.b	object_size
 LevelOnly_Object_RAM_End:
-				ds.b	8*object_size
+
 Object_RAM_End:
+				ds.b	$200	; unused
 
 Primary_Collision:		ds.b	$300
 Secondary_Collision:		ds.b	$300
@@ -1165,10 +1181,10 @@ Block_cache:			ds.b	$80
 Ring_consumption_table:		ds.b	$80	; contains RAM addresses of rings currently being consumed
 Ring_consumption_table_End:
 
-Underwater_palette_2:		ds.b palette_line_size	; not sure what it's used for but it's only used when there's water
-Underwater_palette_2_line2:	ds.b palette_line_size
-Underwater_palette_2_line3:	ds.b palette_line_size
-Underwater_palette_2_line4:	ds.b palette_line_size
+Underwater_target_palette:		ds.b palette_line_size	; This is used by the screen-fading subroutines.
+Underwater_target_palette_line2:	ds.b palette_line_size	; While Underwater_palette contains the blacked-out palette caused by the fading,
+Underwater_target_palette_line3:	ds.b palette_line_size	; Underwater_target_palette will contain the palette the screen will ultimately fade in to.
+Underwater_target_palette_line4:	ds.b palette_line_size
 
 Underwater_palette:		ds.b palette_line_size	; main palette for underwater parts of the screen
 Underwater_palette_line2:	ds.b palette_line_size
@@ -1304,7 +1320,7 @@ CNZ_Visible_bumpers_end:			ds.l	1
 CNZ_Visible_bumpers_start_P2:			ds.l	1
 CNZ_Visible_bumpers_end_P2:			ds.l	1
 
-Dirty_flag:			ds.b	1	; if whole screen needs to redraw
+Screen_redraw_flag:			ds.b	1	; if whole screen needs to redraw, such as when you destroy that piston before the boss in WFZ
 CPZ_UnkScroll_Timer:	ds.b	1	; Used only in unused CPZ scrolling function
 WFZ_SCZ_Fire_Toggle:	ds.b	1
 				ds.b	1	; $FFFFF72F ; seems unused
@@ -1392,24 +1408,21 @@ Sprite_Table:			ds.b	$280	; Sprite attribute table buffer
 Sprite_Table_End:
 				ds.b	$80	; unused, but SAT buffer can spill over into this area when there are too many sprites on-screen
 
-Normal_palette:			ds.b	palette_line_size
+Normal_palette:			ds.b	palette_line_size	; main palette for non-underwater parts of the screen
 Normal_palette_line2:		ds.b	palette_line_size
 Normal_palette_line3:		ds.b	palette_line_size
 Normal_palette_line4:		ds.b	palette_line_size
-Second_palette:
-Target_palette:			ds.b	palette_line_size
-Second_palette_line2:
-Target_palette_line2:		ds.b	palette_line_size
-Second_palette_line3:
-Target_palette_line3:		ds.b	palette_line_size
-Second_palette_line4:
+
+Target_palette:			ds.b	palette_line_size	; This is used by the screen-fading subroutines.
+Target_palette_line2:		ds.b	palette_line_size	; While Normal_palette contains the blacked-out palette caused by the fading,
+Target_palette_line3:		ds.b	palette_line_size	; Target_palette will contain the palette the screen will ultimately fade in to.
 Target_palette_line4:		ds.b	palette_line_size
 
 Object_Respawn_Table:
-Obj_respawn_index:		ds.w	$C0
-Object_Respawn_Table_End:
-
-				ds.b	$80	; Stack
+Obj_respawn_index:		ds.b	2		; respawn table indices of the next objects when moving left or right for the first player
+Obj_respawn_data:		ds.b	$100	; Maximum possible number of respawn entries that S2 can handle; for stock S2, $80 is enough
+Obj_respawn_data_End:
+				ds.b	$FE	; Stack; the first $7E bytes are cleared by ObjectsManager_Init, with possibly disastrous consequences. At least $A0 bytes are needed.
 System_Stack:
 
 SS_2p_Flag:				ds.w	1	; $FFFFFE00-$FFFFFE01 ; seems unused
@@ -1613,7 +1626,7 @@ Camera_Min_Y_pos_Debug_Copy:	ds.w	1
 Camera_Max_Y_pos_Debug_Copy:	ds.w	1
 Level_select_flag:		ds.b	1
 Slow_motion_flag:		ds.b	1
-Night_mode_flag:		ds.w	1
+Debug_options_flag:		ds.w	1	; if set, allows you to enable debug mode and "night mode"
 Correct_cheat_entries:		ds.w	1
 Correct_cheat_entries_2:	ds.w	1	; for 14 continues or 7 emeralds codes
 Two_player_mode:		ds.w	1	; flag (0 for main game)
